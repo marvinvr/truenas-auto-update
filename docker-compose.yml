@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  truenas-auto-update:
+    build: .
+    container_name: truenas-auto-update
+    environment:
+      # Required: Set your TrueNAS details
+      - BASE_URL=${BASE_URL:-https://truenas.local}
+      - API_KEY=${API_KEY:-your-api-key-here}
+
+      # Optional: Cron schedule (comment out or leave empty for run-once mode)
+      # - CRON_SCHEDULE=0 4 * * *
+
+      # Optional: Notification settings
+      - APPRISE_URLS=${APPRISE_URLS:-}
+      - NOTIFY_ON_SUCCESS=${NOTIFY_ON_SUCCESS:-false}
+
+      # Optional: App filtering
+      - ONLY_UPDATE_STARTED_APPS=${ONLY_UPDATE_STARTED_APPS:-false}
+      - EXCLUDE_APPS=${EXCLUDE_APPS:-}
+      - INCLUDE_APPS=${INCLUDE_APPS:-}
+
+      # Optional: Docker image cleanup
+      - AUTO_CLEANUP_IMAGES=${AUTO_CLEANUP_IMAGES:-true}
+
+    # Mount Docker socket for image cleanup
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    restart: no

@@ -1,5 +1,6 @@
 import logging
 import os
+import subprocess
 import time
 
 import apprise
@@ -13,6 +14,7 @@ API_KEY = os.getenv("API_KEY")
 APPRISE_URLS = os.getenv("APPRISE_URLS", "").strip()
 NOTIFY_ON_SUCCESS = os.getenv("NOTIFY_ON_SUCCESS", "false").lower() == "true"
 ONLY_UPDATE_STARTED_APPS = os.getenv("ONLY_UPDATE_STARTED_APPS", "false").lower() == "true"
+AUTO_CLEANUP_IMAGES = os.getenv("AUTO_CLEANUP_IMAGES", "false").lower() == "true"
 EXCLUDE_APPS = [app.strip() for app in os.getenv("EXCLUDE_APPS", "").strip().split(",") if app.strip()]
 INCLUDE_APPS = [app.strip() for app in os.getenv("INCLUDE_APPS", "").strip().split(",") if app.strip()]
 
@@ -32,6 +34,74 @@ def send_notification(title, message):
     if APPRISE_URLS:
         apobj.notify(title=title, body=message)
         logger.info(f"Notification sent: {title}")
+
+
+def cleanup_docker_images():
+    """Clean up unused Docker images if AUTO_CLEANUP_IMAGES is enabled"""
+    if not AUTO_CLEANUP_IMAGES:
+        logger.info("Docker image cleanup is disabled")
+        return
+
+    logger.info("Checking Docker daemon availability...")
+
+    # Check if Docker daemon is accessible
+    check_cmd = ["docker", "info"]
+    try:
+        result = subprocess.run(
+            check_cmd,
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+
+        if result.returncode != 0:
+            error_msg = "Docker cleanup enabled but Docker daemon is not accessible. Make sure the Docker socket is mounted at /var/run/docker.sock"
+            logger.error(error_msg)
+            send_notification("Docker Cleanup Warning", error_msg)
+            return
+    except subprocess.TimeoutExpired:
+        error_msg = "Docker cleanup enabled but Docker daemon check timed out. Make sure the Docker socket is mounted at /var/run/docker.sock"
+        logger.error(error_msg)
+        send_notification("Docker Cleanup Warning", error_msg)
+        return
+    except FileNotFoundError:
+        error_msg = "Docker cleanup enabled but Docker CLI is not installed"
+        logger.error(error_msg)
+        send_notification("Docker Cleanup Warning", error_msg)
+        return
+    except Exception as e:
+        error_msg = f"Docker cleanup enabled but failed to check Docker daemon: {str(e)}"
+        logger.error(error_msg)
+        send_notification("Docker Cleanup Warning", error_msg)
+        return
+
+    logger.info("Docker daemon is accessible, proceeding with image cleanup...")
+
+    # Run docker image prune -a -f
+    cleanup_cmd = ["docker", "image", "prune", "-a", "-f"]
+    try:
+        result = subprocess.run(
+            cleanup_cmd,
+            capture_output=True,
+            text=True,
+            timeout=300
+        )
+
+        if result.returncode == 0:
+            logger.info("Docker image cleanup completed successfully")
+            logger.info(f"Cleanup output: {result.stdout.strip()}")
+        else:
+            error_msg = f"Docker image cleanup failed with return code {result.returncode}: {result.stderr.strip()}"
+            logger.error(error_msg)
+            send_notification("Docker Cleanup Failed", error_msg)
+    except subprocess.TimeoutExpired:
+        error_msg = "Docker image cleanup timed out after 5 minutes"
+        logger.error(error_msg)
+        send_notification("Docker Cleanup Failed", error_msg)
+    except Exception as e:
+        error_msg = f"Docker image cleanup failed: {str(e)}"
+        logger.error(error_msg)
+        send_notification("Docker Cleanup Failed", error_msg)
 
 
 if not BASE_URL or not API_KEY:
@@ -118,5 +188,10 @@ for app in apps_with_upgrade:
         send_notification("Upgrade Failed", error_msg)
 
     time.sleep(1)
+
+logger.info("All app updates completed")
+
+# Run Docker image cleanup after all updates are done
+cleanup_docker_images()
 
 logger.info("Done")
