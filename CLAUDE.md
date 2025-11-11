@@ -19,7 +19,7 @@ This is a simple Python application that automatically updates TrueNAS SCALE app
 - Implements notification system via Apprise library for multiple notification services
 - Supports both immediate execution and scheduled execution via cron
 - Job waiting mechanism for async upgrade operations using TrueNAS job system
-- SSL verification disabled for TrueNAS API calls (common for self-signed certificates)
+- Configurable SSL verification for TrueNAS API calls (disabled by default for self-signed certificates)
 
 ## Environment Configuration
 
@@ -31,6 +31,7 @@ Optional:
 - `CRON_SCHEDULE`: Cron expression for scheduling (if not set, runs once)
 - `APPRISE_URLS`: Comma-separated notification URLs
 - `NOTIFY_ON_SUCCESS`: Enable success notifications (default: false)
+- `SSL_VERIFY`: Enable SSL certificate verification (default: false)
 
 ## Development Commands
 
@@ -67,4 +68,4 @@ docker run --rm \
 - Uses TrueNAS `/app` endpoint to list apps and check `upgrade_available` flag
 - Triggers upgrades via `/app/upgrade` endpoint with app ID
 - Monitors upgrade progress using `/core/job_wait` endpoint for job completion
-- All API calls use Bearer token authentication and disable SSL verification
+- All API calls use Bearer token authentication with configurable SSL verification
