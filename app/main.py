@@ -15,6 +15,7 @@ APPRISE_URLS = os.getenv("APPRISE_URLS", "").strip()
 NOTIFY_ON_SUCCESS = os.getenv("NOTIFY_ON_SUCCESS", "false").lower() == "true"
 ONLY_UPDATE_STARTED_APPS = os.getenv("ONLY_UPDATE_STARTED_APPS", "false").lower() == "true"
 AUTO_CLEANUP_IMAGES = os.getenv("AUTO_CLEANUP_IMAGES", "false").lower() == "true"
+SSL_VERIFY = os.getenv("SSL_VERIFY", "false").lower() == "true"
 EXCLUDE_APPS = [app.strip() for app in os.getenv("EXCLUDE_APPS", "").strip().split(",") if app.strip()]
 INCLUDE_APPS = [app.strip() for app in os.getenv("INCLUDE_APPS", "").strip().split(",") if app.strip()]
 
@@ -113,7 +114,7 @@ BASE_URL = BASE_URL + "/api/v2.0"
 
 try:
     response = requests.get(
-        f"{BASE_URL}/app", headers={"Authorization": f"Bearer {API_KEY}"}, verify=False
+        f"{BASE_URL}/app", headers={"Authorization": f"Bearer {API_KEY}"}, verify=SSL_VERIFY
     )
 except Exception as e:
     logger.error(f"Failed to get apps: {str(e)}")
@@ -139,7 +140,7 @@ def await_job(job_id):
         f"{BASE_URL}/core/job_wait",
         headers={"Authorization": f"Bearer {API_KEY}"},
         json=job_id,
-        verify=False,
+        verify=SSL_VERIFY,
     )
 
     if job.status_code != 200:
@@ -165,7 +166,7 @@ for app in apps_with_upgrade:
         f"{BASE_URL}/app/upgrade",
         headers={"Authorization": f"Bearer {API_KEY}"},
         json={"app_name": app["id"]},
-        verify=False,
+        verify=SSL_VERIFY,
     )
 
     if response.status_code != 200:

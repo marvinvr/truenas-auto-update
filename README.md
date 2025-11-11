@@ -12,6 +12,7 @@ Yes, I know what you're thinking - "You shouldn't auto-update your TrueNAS apps!
 - `ONLY_UPDATE_STARTED_APPS` (_optional_): Set to "true" to only update apps that are currently running/powered-on (default: "false"). This helps avoid unnecessary updates for apps that are stopped.
 - `EXCLUDE_APPS` (_optional_): Comma-separated list of app names to skip during updates (e.g., `app1,app2`). This is useful if you want to exclude certain apps from being updated automatically.
 - `INCLUDE_APPS` (_optional_): Comma-separated list of app names to include during updates (e.g., `app1,app2`). This is useful if you want to only update certain apps and skip the rest.
+- `SSL_VERIFY` (_optional_): Set to "true" to enable SSL certificate verification for TrueNAS API calls (default: "false"). When enabled, the connection will verify SSL certificates, which is recommended when using valid certificates like Let's Encrypt. When disabled, SSL warnings may be displayed but connections to TrueNAS instances with self-signed certificates will work.
 - `AUTO_CLEANUP_IMAGES` (_optional_): Set to "true" to automatically clean up unused Docker images after all updates are complete (default: "false"). This runs `docker image prune -a -f` to remove all unused images and free up disk space. **Requires the Docker socket to be mounted** (see Docker Image Cleanup section below).
 
 NOTE: The `EXCLUDE_APPS` and `INCLUDE_APPS` variables are mutually exclusive. If both are set, the application will error out.
