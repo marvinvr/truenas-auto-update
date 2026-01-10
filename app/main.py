@@ -2,9 +2,11 @@ import logging
 import os
 import subprocess
 import time
+from urllib.parse import urlparse
 
 import apprise
-import requests
+from truenas_api_client import Client
+from truenas_api_client.exc import ClientException, CallTimeout
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -105,92 +107,105 @@ def cleanup_docker_images():
         send_notification("Docker Cleanup Failed", error_msg)
 
 
+def build_websocket_uri(base_url):
+    """Convert HTTP(S) URL to WebSocket URI for TrueNAS API"""
+    parsed = urlparse(base_url)
+
+    # Determine WebSocket scheme based on HTTP scheme
+    if parsed.scheme == "https":
+        ws_scheme = "wss"
+    else:
+        ws_scheme = "ws"
+
+    # Build the WebSocket URI with the API endpoint
+    return f"{ws_scheme}://{parsed.netloc}/api/current"
+
+
 if not BASE_URL or not API_KEY:
     logger.error("BASE_URL or API_KEY is not set")
     send_notification("Configuration Error", "BASE_URL or API_KEY is not set")
     exit(1)
 
-BASE_URL = BASE_URL + "/api/v2.0"
+# Build WebSocket URI from BASE_URL
+ws_uri = build_websocket_uri(BASE_URL)
+logger.info(f"Connecting to TrueNAS API at {ws_uri}")
 
 try:
-    response = requests.get(
-        f"{BASE_URL}/app", headers={"Authorization": f"Bearer {API_KEY}"}, verify=SSL_VERIFY
-    )
+    with Client(uri=ws_uri, verify_ssl=SSL_VERIFY) as client:
+        # Authenticate with API key
+        logger.info("Authenticating with API key...")
+        if not client.call("auth.login_with_api_key", API_KEY):
+            logger.error("Authentication failed")
+            send_notification("Error", f"Authentication failed for {BASE_URL}")
+            exit(1)
+
+        logger.info("Authentication successful")
+
+        # Get all apps using app.query
+        logger.info("Fetching apps...")
+        apps = client.call("app.query")
+        logger.info(f"Total apps found: {len(apps)}")
+
+        apps_with_upgrade = [app for app in apps if app.get("upgrade_available")]
+
+        logger.info(f"Found {len(apps_with_upgrade)} apps with upgrade available")
+
+        for app in apps_with_upgrade:
+            # Use 'name' field - this is what app.upgrade expects as 'app_name' parameter
+            app_name = app.get("name")
+            if not app_name:
+                logger.warning(f"Skipping app with missing name: {app}")
+                continue
+
+            app_state = app.get("state", "unknown")
+
+            if EXCLUDE_APPS and app_name in EXCLUDE_APPS:
+                logger.info(f"Skipping upgrade for: {app_name} (APP in EXCLUDE_APPS)")
+                continue
+            if INCLUDE_APPS and app_name not in INCLUDE_APPS:
+                logger.info(f"Skipping upgrade for: {app_name} (APP not in INCLUDE_APPS)")
+                continue
+            if ONLY_UPDATE_STARTED_APPS and app_state.upper() != "RUNNING":
+                logger.info(f"Skipping upgrade for: {app_name} (APP not running, state: {app_state})")
+                continue
+
+            logger.info(f"Upgrading {app_name}...")
+
+            try:
+                # Call app.upgrade with job=True to wait for completion
+                # app.upgrade takes app_name as first parameter
+                result = client.call("app.upgrade", app_name, job=True)
+
+                success_msg = f"Upgrade of {app_name} completed successfully"
+                logger.info(success_msg)
+                if NOTIFY_ON_SUCCESS:
+                    send_notification("App Updated", f"Successfully updated {app_name} to the latest version")
+
+            except CallTimeout:
+                error_msg = f"Upgrade of {app_name} timed out"
+                logger.error(error_msg)
+                send_notification("Upgrade Timeout", error_msg)
+            except ClientException as e:
+                error_msg = f"Failed to upgrade {app_name}: {e.error}"
+                logger.error(error_msg)
+                send_notification("Upgrade Failed", error_msg)
+            except Exception as e:
+                error_msg = f"Failed to upgrade {app_name}: {str(e)}"
+                logger.error(error_msg)
+                send_notification("Upgrade Failed", error_msg)
+
+            time.sleep(1)
+
+        logger.info("All app updates completed")
+
+except ClientException as e:
+    logger.error(f"TrueNAS API error: {e.error}")
+    send_notification("Error", f"TrueNAS API error at {BASE_URL}: {e.error}")
+    exit(1)
 except Exception as e:
-    logger.error(f"Failed to get apps: {str(e)}")
-    send_notification("Error", f"Failed to get apps on {BASE_URL}: {str(e)}")
+    logger.error(f"Failed to connect to TrueNAS API: {str(e)}")
+    send_notification("Error", f"Failed to connect to TrueNAS API at {BASE_URL}: {str(e)}")
     exit(1)
-
-if response.status_code != 200:
-    logger.error(f"Failed to get apps: {response.status_code}")
-    send_notification(
-        "Error", f"Failed to get apps on {BASE_URL}: {response.status_code}"
-    )
-    exit(1)
-
-apps = response.json()
-
-apps_with_upgrade = [app for app in apps if app["upgrade_available"]]
-
-logger.info(f"Found {len(apps_with_upgrade)} apps with upgrade available")
-
-def await_job(job_id):
-    logger.info(f"Waiting for job {job_id} to complete...")
-    job = requests.post(
-        f"{BASE_URL}/core/job_wait",
-        headers={"Authorization": f"Bearer {API_KEY}"},
-        json=job_id,
-        verify=SSL_VERIFY,
-    )
-
-    if job.status_code != 200:
-        logger.error(f"Failed to wait for job {job_id}: {job.status_code}")
-        return None
-
-    return job
-
-
-for app in apps_with_upgrade:
-    if EXCLUDE_APPS and app["name"] in EXCLUDE_APPS:
-        logger.info(f"Skipping upgrade for: {app['name']} (APP in EXCLUDE_APPS)")
-        continue
-    if INCLUDE_APPS and app["name"] not in INCLUDE_APPS:
-        logger.info(f"Skipping upgrade for: {app['name']} (APP not in INCLUDE_APPS)")
-        continue
-    if ONLY_UPDATE_STARTED_APPS and app.get("state", "").upper() != "RUNNING":
-        logger.info(f"Skipping upgrade for: {app['name']} (APP not running, state: {app.get('state', 'unknown')})")
-        continue
-        
-    logger.info(f"Upgrading {app['name']}...")
-    response = requests.post(
-        f"{BASE_URL}/app/upgrade",
-        headers={"Authorization": f"Bearer {API_KEY}"},
-        json={"app_name": app["id"]},
-        verify=SSL_VERIFY,
-    )
-
-    if response.status_code != 200:
-        error_msg = f"Failed to upgrade {app['name']}: {response.status_code}"
-        logger.error(error_msg)
-        send_notification("Upgrade Failed", error_msg)
-        continue
-
-    job_id = response.text
-    response = await_job(job_id)
-
-    if response.status_code == 200:
-        success_msg = f"Upgrade of {app['name']} triggered successfully"
-        logger.info(success_msg)
-        if NOTIFY_ON_SUCCESS:
-            send_notification("App Updated", f"Successfully updated {app['name']} to the latest version")
-    else:
-        error_msg = f"Failed to upgrade {app['name']}: {response.status_code}"
-        logger.error(error_msg)
-        send_notification("Upgrade Failed", error_msg)
-
-    time.sleep(1)
-
-logger.info("All app updates completed")
 
 # Run Docker image cleanup after all updates are done
 cleanup_docker_images()

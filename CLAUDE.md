@@ -15,10 +15,10 @@ This is a simple Python application that automatically updates TrueNAS SCALE app
 
 ### Key Architecture Points
 
-- Uses TrueNAS SCALE v2.0 API (`/api/v2.0`) with Bearer token authentication
+- Uses TrueNAS JSON-RPC 2.0 API via WebSocket (`/api/current`) with the official `truenas-api-client` library
 - Implements notification system via Apprise library for multiple notification services
 - Supports both immediate execution and scheduled execution via cron
-- Job waiting mechanism for async upgrade operations using TrueNAS job system
+- Job waiting is handled automatically by the API client when using `job=True` parameter
 - Configurable SSL verification for TrueNAS API calls (disabled by default for self-signed certificates)
 
 ## Environment Configuration
@@ -65,7 +65,9 @@ docker run --rm \
 
 ## API Integration Details
 
-- Uses TrueNAS `/app` endpoint to list apps and check `upgrade_available` flag
-- Triggers upgrades via `/app/upgrade` endpoint with app ID
-- Monitors upgrade progress using `/core/job_wait` endpoint for job completion
-- All API calls use Bearer token authentication with configurable SSL verification
+- Uses TrueNAS JSON-RPC 2.0 API over WebSocket (official `truenas-api-client` library)
+- Connects via `wss://` or `ws://` to `/api/current` endpoint
+- Authenticates using `auth.login_with_api_key` method
+- Uses `app.query` method to list apps and check `upgrade_available` flag
+- Triggers upgrades via `app.upgrade` method with app ID and `job=True` for automatic job completion waiting
+- SSL verification is configurable via the client's `verify_ssl` parameter
