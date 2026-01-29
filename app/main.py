@@ -112,10 +112,10 @@ def build_websocket_uri(base_url):
     parsed = urlparse(base_url)
 
     # Determine WebSocket scheme based on HTTP scheme
-    if parsed.scheme == "https":
-        ws_scheme = "wss"
-    else:
+    if parsed.scheme == "http":
         ws_scheme = "ws"
+    else:
+        ws_scheme = "wss"
 
     # Build the WebSocket URI with the API endpoint
     return f"{ws_scheme}://{parsed.netloc}/api/current"
