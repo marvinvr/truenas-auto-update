@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = os.getenv("BASE_URL")
 API_KEY = os.getenv("API_KEY")
+API_USERNAME = os.getenv("API_USERNAME", "root")
 APPRISE_URLS = os.getenv("APPRISE_URLS", "").strip()
 NOTIFY_ON_SUCCESS = os.getenv("NOTIFY_ON_SUCCESS", "false").lower() == "true"
 ONLY_UPDATE_STARTED_APPS = os.getenv("ONLY_UPDATE_STARTED_APPS", "false").lower() == "true"
@@ -132,10 +133,15 @@ logger.info(f"Connecting to TrueNAS API at {ws_uri}")
 
 try:
     with Client(uri=ws_uri, verify_ssl=SSL_VERIFY) as client:
-        # Authenticate with API key
-        logger.info("Authenticating with API key...")
-        if not client.call("auth.login_with_api_key", API_KEY):
-            logger.error("Authentication failed")
+        # Authenticate with API key using auth.login_ex (required for TrueNAS 25.04+)
+        logger.info(f"Authenticating as {API_USERNAME} with API key...")
+        auth_response = client.call("auth.login_ex", {
+            "mechanism": "API_KEY_PLAIN",
+            "username": API_USERNAME,
+            "api_key": API_KEY
+        })
+        if not auth_response or not auth_response.get("response_type") == "SUCCESS":
+            logger.error(f"Authentication failed: {auth_response}")
             send_notification("Error", f"Authentication failed for {BASE_URL}")
             exit(1)
 

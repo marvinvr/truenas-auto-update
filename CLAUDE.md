@@ -28,6 +28,7 @@ Required:
 - `API_KEY`: TrueNAS API key
 
 Optional:
+- `API_USERNAME`: Username for API key authentication (default: root). Required for TrueNAS 25.04+ where API keys are user-linked.
 - `CRON_SCHEDULE`: Cron expression for scheduling (if not set, runs once)
 - `APPRISE_URLS`: Comma-separated notification URLs
 - `NOTIFY_ON_SUCCESS`: Enable success notifications (default: false)
@@ -53,12 +54,14 @@ docker build -t truenas-auto-update .
 docker run --rm \
   -e BASE_URL=https://your-truenas-url \
   -e API_KEY=your-api-key \
+  -e API_USERNAME=admin \
   truenas-auto-update
 
 # Run container with cron schedule
 docker run --rm \
   -e BASE_URL=https://your-truenas-url \
   -e API_KEY=your-api-key \
+  -e API_USERNAME=admin \
   -e CRON_SCHEDULE="0 4 * * *" \
   truenas-auto-update
 ```
@@ -67,7 +70,7 @@ docker run --rm \
 
 - Uses TrueNAS JSON-RPC 2.0 API over WebSocket (official `truenas-api-client` library)
 - Connects via `wss://` or `ws://` to `/api/current` endpoint
-- Authenticates using `auth.login_with_api_key` method
+- Authenticates using `auth.login_ex` with `API_KEY_PLAIN` mechanism (required for TrueNAS 25.04+)
 - Uses `app.query` method to list apps and check `upgrade_available` flag
 - Triggers upgrades via `app.upgrade` method with app ID and `job=True` for automatic job completion waiting
 - SSL verification is configurable via the client's `verify_ssl` parameter

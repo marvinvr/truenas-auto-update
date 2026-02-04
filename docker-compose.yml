@@ -7,6 +7,7 @@ services:
     environment:
       # Required: Set your TrueNAS details
       - BASE_URL=${BASE_URL:-https://truenas.local}
+      - API_USERNAME=${API_USERNAME:-your-username-here}
       - API_KEY=${API_KEY:-your-api-key-here}
 
       # Optional: Cron schedule (comment out or leave empty for run-once mode)

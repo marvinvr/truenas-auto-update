@@ -5,7 +5,8 @@ Yes, I know what you're thinking - "You shouldn't auto-update your TrueNAS apps!
 ## Environment Variables
 
 - `BASE_URL`: Your TrueNAS SCALE instance URL (e.g., `https://truenas.local`)
-- `API_KEY`: Your TrueNAS API key (can be generated in the UI under System Settings → API Keys)
+- `API_KEY`: Your TrueNAS API key (see "Getting Started" for how to generate one)
+- `API_USERNAME` (_optional_): Username associated with the API key (default: `root`). **Required for TrueNAS 25.04+** where API keys are user-linked.
 - `CRON_SCHEDULE` (_optional_): Cron schedule for when to check for updates (e.g., `0 4 * * *` for daily at 4 AM). If not set, the script will run once and then exit.
 - `APPRISE_URLS` (_optional_): Apprise URLs to send notifications to (e.g., `https://example.com/apprise,https://example.com/apprise2`) More info on [Apprise](https://github.com/caronc/apprise)
 - `NOTIFY_ON_SUCCESS` (_optional_): Set to "true" to receive notifications when apps are successfully updated (default: "false")
@@ -21,6 +22,14 @@ NOTE: The `EXCLUDE_APPS` and `INCLUDE_APPS` variables are mutually exclusive. If
 
 1. Generate an API key in your TrueNAS SCALE UI:
 
+   **For TrueNAS 25.04 (Fangtooth) and later:**
+   - Go to Credentials → Users → click on your user (e.g., `admin` or `root`)
+   - Scroll to the "API Keys" section
+   - Click "Add" to create a new key
+   - Copy the API key and note the username - you'll need both
+   - Set `API_USERNAME` to match the user who owns the key
+
+   **For TrueNAS 24.10 and earlier:**
    - Go to System Settings → API Keys
    - Click "Add"
    - Give it a name and save
@@ -55,6 +64,7 @@ docker run --name truenas-auto-update \
          --restart unless-stopped \
          -e BASE_URL=https://your-truenas-url \
          -e API_KEY=your-api-key \
+         -e API_USERNAME=admin \
          -e CRON_SCHEDULE="0 4 * * *" \
          -e APPRISE_URLS="https://example.com/apprise,https://example.com/apprise2" \
          -e NOTIFY_ON_SUCCESS="true" \
@@ -70,6 +80,7 @@ docker run --name truenas-auto-update \
          -v /var/run/docker.sock:/var/run/docker.sock \
          -e BASE_URL=https://your-truenas-url \
          -e API_KEY=your-api-key \
+         -e API_USERNAME=admin \
          -e CRON_SCHEDULE="0 4 * * *" \
          -e AUTO_CLEANUP_IMAGES="true" \
          ghcr.io/marvinvr/truenas-auto-update
@@ -126,6 +137,7 @@ docker run --name truenas-auto-update \
          -v /var/run/docker.sock:/var/run/docker.sock \
          -e BASE_URL=https://your-truenas-url \
          -e API_KEY=your-api-key \
+         -e API_USERNAME=admin \
          -e CRON_SCHEDULE="0 4 * * *" \
          -e AUTO_CLEANUP_IMAGES="true" \
          -e APPRISE_URLS="https://example.com/apprise" \
