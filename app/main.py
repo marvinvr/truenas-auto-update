@@ -112,11 +112,8 @@ def build_websocket_uri(base_url):
     """Convert HTTP(S) URL to WebSocket URI for TrueNAS API"""
     parsed = urlparse(base_url)
 
-    # Determine WebSocket scheme based on HTTP scheme
-    if parsed.scheme == "http":
-        ws_scheme = "ws"
-    else:
-        ws_scheme = "wss"
+    # In newer TrueNAS versions, WebSocket endpoint is always wss, otherwise it disables API access
+    ws_scheme = "wss"
 
     # Build the WebSocket URI with the API endpoint
     return f"{ws_scheme}://{parsed.netloc}/api/current"
