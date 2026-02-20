@@ -86,17 +86,19 @@ docker run --name truenas-auto-update \
          ghcr.io/marvinvr/truenas-auto-update
 ```
 
-- **or** install it as a Custom App in SCALE:
+- **or** install it as a Custom App in TrueNAS:
 
 1. Go to the Apps page in SCALE
 2. Click "Discover Apps" in the top right
 3. Click "Custom App" in the top right
 4. Set the following values:
-   - Name: `TrueNAS Auto Update`
+   - Name: `truenas-auto-update`
    - Repository: `ghcr.io/marvinvr/truenas-auto-update`
    - Tag: `latest`
    - Environment Variables (As described above)
    - Restart Policy: `Unless Stopped`
+   - Network: `Host` (if you have restricted the Allowed IP Addresses)
+   - Storage: `/var/run/docker.sock` both for mount & host path (if you want to run the Docker Image Cleanup)
 5. Install the app
 6. (_optional_) Review the app logs to ensure it's working as expected
 
