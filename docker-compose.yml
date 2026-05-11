@@ -12,6 +12,7 @@ services:
 
       # Optional: Cron schedule (comment out or leave empty for run-once mode)
       # - CRON_SCHEDULE=0 4 * * *
+      # - TZ=${TZ:-Europe/Zurich}
 
       # Optional: Notification settings
       - APPRISE_URLS=${APPRISE_URLS:-}

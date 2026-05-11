@@ -8,6 +8,7 @@ Yes, I know what you're thinking - "You shouldn't auto-update your TrueNAS apps!
 - `API_KEY`: Your TrueNAS API key (see "Getting Started" for how to generate one)
 - `API_USERNAME` (_optional_): Username associated with the API key (default: `root`). **Required for TrueNAS 25.04+** where API keys are user-linked.
 - `CRON_SCHEDULE` (_optional_): Cron schedule for when to check for updates (e.g., `0 4 * * *` for daily at 4 AM). If not set, the script will run once and then exit.
+- `TZ` (_optional_): Timezone used by cron when evaluating `CRON_SCHEDULE` (e.g., `Europe/Zurich`). If not set, the container defaults to UTC.
 - `APPRISE_URLS` (_optional_): Apprise URLs to send notifications to (e.g., `https://example.com/apprise,https://example.com/apprise2`) More info on [Apprise](https://github.com/caronc/apprise)
 - `NOTIFY_ON_SUCCESS` (_optional_): Set to "true" to receive notifications when apps are successfully updated (default: "false")
 - `ONLY_UPDATE_STARTED_APPS` (_optional_): Set to "true" to only update apps that are currently running/powered-on (default: "false"). This helps avoid unnecessary updates for apps that are stopped.
@@ -66,6 +67,7 @@ docker run --name truenas-auto-update \
          -e API_KEY=your-api-key \
          -e API_USERNAME=admin \
          -e CRON_SCHEDULE="0 4 * * *" \
+         -e TZ="Europe/Zurich" \
          -e APPRISE_URLS="https://example.com/apprise,https://example.com/apprise2" \
          -e NOTIFY_ON_SUCCESS="true" \
          -e ONLY_UPDATE_STARTED_APPS="true" \
@@ -82,6 +84,7 @@ docker run --name truenas-auto-update \
          -e API_KEY=your-api-key \
          -e API_USERNAME=admin \
          -e CRON_SCHEDULE="0 4 * * *" \
+         -e TZ="Europe/Zurich" \
          -e AUTO_CLEANUP_IMAGES="true" \
          ghcr.io/marvinvr/truenas-auto-update
 ```
@@ -141,6 +144,7 @@ docker run --name truenas-auto-update \
          -e API_KEY=your-api-key \
          -e API_USERNAME=admin \
          -e CRON_SCHEDULE="0 4 * * *" \
+         -e TZ="Europe/Zurich" \
          -e AUTO_CLEANUP_IMAGES="true" \
          -e APPRISE_URLS="https://example.com/apprise" \
          ghcr.io/marvinvr/truenas-auto-update
