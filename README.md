@@ -18,6 +18,9 @@ Yes, I know what you're thinking - "You shouldn't auto-update your TrueNAS apps!
 
 NOTE: The `EXCLUDE_APPS` and `INCLUDE_APPS` variables are mutually exclusive. If both are set, the application will error out.
 
+Apps that were running before an upgrade are checked afterward. If TrueNAS leaves one stopped, the updater waits up to 10 minutes,
+tries to start it once, and waits up to another 10 minutes before sending a failure notification.
+
 ## Getting Started
 
 1. Generate an API key in your TrueNAS SCALE UI:

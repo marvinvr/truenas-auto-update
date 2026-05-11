@@ -21,6 +21,8 @@ AUTO_CLEANUP_IMAGES = os.getenv("AUTO_CLEANUP_IMAGES", "false").lower() == "true
 SSL_VERIFY = os.getenv("SSL_VERIFY", "false").lower() == "true"
 EXCLUDE_APPS = [app.strip() for app in os.getenv("EXCLUDE_APPS", "").strip().split(",") if app.strip()]
 INCLUDE_APPS = [app.strip() for app in os.getenv("INCLUDE_APPS", "").strip().split(",") if app.strip()]
+APP_START_TIMEOUT_SECONDS = 600
+APP_STATE_POLL_INTERVAL_SECONDS = 10
 
 if EXCLUDE_APPS and INCLUDE_APPS:
     logger.error("Cannot use both EXCLUDE_APPS and INCLUDE_APPS simultaneously")
@@ -119,6 +121,119 @@ def build_websocket_uri(base_url):
     return f"{ws_scheme}://{parsed.netloc}/api/current"
 
 
+def find_app_by_name(client, app_name):
+    """Fetch the latest app entry for app_name."""
+    apps = client.call("app.query")
+    return next((app for app in apps if app.get("name") == app_name), None)
+
+
+def get_app_state(client, app_name):
+    """Fetch the latest app state for app_name."""
+    app = find_app_by_name(client, app_name)
+    if not app:
+        logger.warning(f"Could not find app after upgrade: {app_name}")
+        return "unknown"
+
+    return app.get("state", "unknown")
+
+
+def normalize_state(state):
+    """Normalize app states for comparisons."""
+    return str(state or "unknown").upper()
+
+
+def wait_for_app_state(client, app_name, desired_state, timeout_seconds, reason):
+    """Wait for an app to reach a desired state, returning its last observed state."""
+    deadline = time.monotonic() + timeout_seconds
+    last_state = "unknown"
+
+    logger.info(
+        f"Waiting up to {timeout_seconds} seconds for {app_name} to reach "
+        f"{desired_state} after {reason}"
+    )
+
+    while time.monotonic() < deadline:
+        try:
+            last_state = get_app_state(client, app_name)
+            if normalize_state(last_state) == desired_state:
+                return last_state
+        except Exception as e:
+            logger.warning(f"Failed to query state for {app_name}: {str(e)}")
+
+        logger.info(
+            f"{app_name} is {last_state}; waiting "
+            f"{APP_STATE_POLL_INTERVAL_SECONDS} seconds before checking again"
+        )
+        time.sleep(APP_STATE_POLL_INTERVAL_SECONDS)
+
+    return last_state
+
+
+def ensure_running_after_upgrade(client, app_name):
+    """Restart an app if TrueNAS leaves it stopped after a successful upgrade."""
+    final_state = wait_for_app_state(
+        client,
+        app_name,
+        "RUNNING",
+        APP_START_TIMEOUT_SECONDS,
+        "upgrade",
+    )
+
+    if normalize_state(final_state) == "RUNNING":
+        logger.info(f"{app_name} is running after upgrade")
+        return True
+
+    if normalize_state(final_state) != "STOPPED":
+        error_msg = (
+            f"Upgrade of {app_name} completed, but the app did not return to "
+            f"RUNNING within {APP_START_TIMEOUT_SECONDS} seconds "
+            f"(current state: {final_state})"
+        )
+        logger.error(error_msg)
+        send_notification("App Not Running After Upgrade", error_msg)
+        return False
+
+    logger.warning(f"{app_name} is stopped after upgrade; attempting to start it")
+    try:
+        client.call("app.start", app_name, job=True)
+    except CallTimeout:
+        error_msg = f"Start of {app_name} timed out after upgrade"
+        logger.error(error_msg)
+        send_notification("App Start Timeout", error_msg)
+        return False
+    except ClientException as e:
+        error_msg = f"Failed to start {app_name} after upgrade: {e.error}"
+        logger.error(error_msg)
+        send_notification("App Start Failed After Upgrade", error_msg)
+        return False
+    except Exception as e:
+        error_msg = f"Failed to start {app_name} after upgrade: {str(e)}"
+        logger.error(error_msg)
+        send_notification("App Start Failed After Upgrade", error_msg)
+        return False
+
+    final_state = wait_for_app_state(
+        client,
+        app_name,
+        "RUNNING",
+        APP_START_TIMEOUT_SECONDS,
+        "start",
+    )
+
+    if normalize_state(final_state) == "RUNNING":
+        logger.info(f"{app_name} started successfully after upgrade")
+        return True
+
+    error_msg = (
+        f"Upgrade of {app_name} completed and a start was attempted, but the app "
+        f"did not reach RUNNING within {APP_START_TIMEOUT_SECONDS} seconds "
+        f"(current state: {final_state})"
+    )
+    logger.error(error_msg)
+    send_notification("App Start Failed After Upgrade", error_msg)
+    return False
+
+
 if not BASE_URL or not API_KEY:
     logger.error("BASE_URL or API_KEY is not set")
     send_notification("Configuration Error", "BASE_URL or API_KEY is not set")
@@ -161,6 +276,7 @@ try:
                 continue
 
             app_state = app.get("state", "unknown")
+            app_was_running = normalize_state(app_state) == "RUNNING"
 
             if EXCLUDE_APPS and app_name in EXCLUDE_APPS:
                 logger.info(f"Skipping upgrade for: {app_name} (APP in EXCLUDE_APPS)")
@@ -168,7 +284,7 @@ try:
             if INCLUDE_APPS and app_name not in INCLUDE_APPS:
                 logger.info(f"Skipping upgrade for: {app_name} (APP not in INCLUDE_APPS)")
                 continue
-            if ONLY_UPDATE_STARTED_APPS and app_state.upper() != "RUNNING":
+            if ONLY_UPDATE_STARTED_APPS and not app_was_running:
                 logger.info(f"Skipping upgrade for: {app_name} (APP not running, state: {app_state})")
                 continue
 
@@ -177,7 +293,10 @@ try:
             try:
                 # Call app.upgrade with job=True to wait for completion
                 # app.upgrade takes app_name as first parameter
-                result = client.call("app.upgrade", app_name, job=True)
+                client.call("app.upgrade", app_name, job=True)
+
+                if app_was_running and not ensure_running_after_upgrade(client, app_name):
+                    continue
 
                 success_msg = f"Upgrade of {app_name} completed successfully"
                 logger.info(success_msg)
