@@ -1,5 +1,15 @@
 #!/bin/bash
 
+if [ -n "$TZ" ]; then
+    if [ ! -f "/usr/share/zoneinfo/$TZ" ]; then
+        echo "Invalid timezone: $TZ"
+        exit 1
+    fi
+
+    ln -snf "/usr/share/zoneinfo/$TZ" /etc/localtime
+    echo "$TZ" > /etc/timezone
+fi
+
 if [ -n "$CRON_SCHEDULE" ]; then
     # Set up environment variables for cron
     printenv | grep -v "no_proxy" >> /etc/environment
@@ -17,6 +27,7 @@ if [ -n "$CRON_SCHEDULE" ]; then
     service cron start
 
     echo "Cron job installed with schedule: $CRON_SCHEDULE"
+    echo "Cron timezone: ${TZ:-UTC}"
     echo "Watching logs..."
     tail -f /var/log/cron.log
 else
