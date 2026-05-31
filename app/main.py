@@ -171,6 +171,7 @@ def wait_for_app_state(client, app_name, desired_state, timeout_seconds, reason)
 
 def ensure_running_after_upgrade(client, app_name, operation="upgrade"):
     """Restart an app if TrueNAS leaves it stopped after a successful operation."""
+    operation_title = operation.capitalize()
     final_state = wait_for_app_state(
         client,
         app_name,
@@ -185,12 +186,12 @@ def ensure_running_after_upgrade(client, app_name, operation="upgrade"):
 
     if normalize_state(final_state) != "STOPPED":
         error_msg = (
-            f"{operation.capitalize()} of {app_name} completed, but the app did "
+            f"{operation_title} of {app_name} completed, but the app did "
             f"not return to RUNNING within {APP_START_TIMEOUT_SECONDS} seconds "
             f"(current state: {final_state})"
         )
         logger.error(error_msg)
-        send_notification("App Not Running After Upgrade", error_msg)
+        send_notification(f"App Not Running After {operation_title}", error_msg)
         return False
 
     logger.warning(f"{app_name} is stopped after {operation}; attempting to start it")
@@ -204,12 +205,12 @@ def ensure_running_after_upgrade(client, app_name, operation="upgrade"):
     except ClientException as e:
         error_msg = f"Failed to start {app_name} after {operation}: {e.error}"
         logger.error(error_msg)
-        send_notification("App Start Failed After Upgrade", error_msg)
+        send_notification(f"App Start Failed After {operation_title}", error_msg)
         return False
     except Exception as e:
         error_msg = f"Failed to start {app_name} after {operation}: {str(e)}"
         logger.error(error_msg)
-        send_notification("App Start Failed After Upgrade", error_msg)
+        send_notification(f"App Start Failed After {operation_title}", error_msg)
         return False
 
     final_state = wait_for_app_state(
@@ -225,12 +226,12 @@ def ensure_running_after_upgrade(client, app_name, operation="upgrade"):
         return True
 
     error_msg = (
-        f"{operation.capitalize()} of {app_name} completed and a start was "
+        f"{operation_title} of {app_name} completed and a start was "
         f"attempted, but the app did not reach RUNNING within "
         f"{APP_START_TIMEOUT_SECONDS} seconds (current state: {final_state})"
     )
     logger.error(error_msg)
-    send_notification("App Start Failed After Upgrade", error_msg)
+    send_notification(f"App Start Failed After {operation_title}", error_msg)
     return False
 
 
@@ -242,13 +243,12 @@ def redeploy_stale_app(client, app_name, app_was_running):
     redeploys the app and clears the shared image-update flag. When several apps
     reference the same image tag, the first upgrade clears the flag for all of
     them, so every sibling processed afterwards raises ``No upgrade available``
-    and is left running the old image even though the new one is already pulled
-    locally. A redeploy recreates the containers against the local image, which
-    is exactly what those siblings need.
+    and is left running the old image. A redeploy stops the app, pulls latest
+    images and restarts it, which is exactly what those siblings need.
     """
     logger.info(
         f"{app_name} reports no upgrade available; a sibling app likely already "
-        f"pulled the shared image. Redeploying to pick up the local image."
+        f"handled the shared image update. Redeploying to pick up the latest image."
     )
     try:
         client.call("app.redeploy", app_name, job=True)
@@ -260,7 +260,7 @@ def redeploy_stale_app(client, app_name, app_was_running):
 
         logger.info(f"Redeploy of {app_name} completed successfully")
         if NOTIFY_ON_SUCCESS:
-            send_notification("App Redeployed", f"Redeployed {app_name} onto the latest local image")
+            send_notification("App Redeployed", f"Redeployed {app_name} onto the latest image")
     except CallTimeout:
         error_msg = f"Redeploy of {app_name} timed out"
         logger.error(error_msg)
@@ -318,6 +318,7 @@ try:
 
             app_state = app.get("state", "unknown")
             app_was_running = normalize_state(app_state) == "RUNNING"
+            app_had_image_update = bool(app.get("image_updates_available"))
 
             if EXCLUDE_APPS and app_name in EXCLUDE_APPS:
                 logger.info(f"Skipping upgrade for: {app_name} (APP in EXCLUDE_APPS)")
@@ -349,11 +350,11 @@ try:
                 logger.error(error_msg)
                 send_notification("Upgrade Timeout", error_msg)
             except ClientException as e:
-                # An app flagged for upgrade can report "No upgrade available" when a
-                # sibling app sharing the same image tag was upgraded first and cleared
-                # the shared image-update flag. The new image is already local, so the
-                # app just needs a redeploy to move onto it.
-                if "No upgrade available" in str(e.error):
+                # An app with image updates can report "No upgrade available" when a
+                # sibling sharing the same image tag was upgraded first and cleared the
+                # shared image-update flag. The app still needs a redeploy to move onto
+                # the updated image.
+                if app_had_image_update and "No upgrade available" in str(e.error):
                     redeploy_stale_app(client, app_name, app_was_running)
                 else:
                     error_msg = f"Failed to upgrade {app_name}: {e.error}"
