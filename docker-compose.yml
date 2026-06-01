@@ -12,6 +12,8 @@ services:
 
       # Optional: Cron schedule (comment out or leave empty for run-once mode)
       # - CRON_SCHEDULE=0 4 * * *
+      # - APP_SCHEDULES={"plex":"0 3 * * *","immich":"30 4 * * 0"}
+      # - RUN_ON_START=false
       # - TZ=${TZ:-Europe/Zurich}
 
       # Optional: Notification settings

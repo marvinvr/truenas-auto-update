@@ -36,7 +36,4 @@ RUN chmod +x /app/docker-entrypoint.sh /app/run-script.sh
 # Create log file
 RUN touch /var/log/cron.log
 
-# Copy crontab file
-COPY crontab /etc/cron.d/app-cron
-
 ENTRYPOINT ["/app/docker-entrypoint.sh"]

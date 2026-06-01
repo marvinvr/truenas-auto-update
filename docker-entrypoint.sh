@@ -10,23 +10,38 @@ if [ -n "$TZ" ]; then
     echo "$TZ" > /etc/timezone
 fi
 
-if [ -n "$CRON_SCHEDULE" ]; then
+if [ -n "$CRON_SCHEDULE" ] || [ -n "$APP_SCHEDULES" ]; then
     # Set up environment variables for cron
-    printenv | grep -v "no_proxy" >> /etc/environment
+    printenv \
+        | grep -v "no_proxy" \
+        | grep -v "^APP_SCHEDULES=" \
+        | grep -v "^CRON_SCHEDULE=" \
+        | grep -v "^SCHEDULE_INCLUDE_APP_IDS=" \
+        | grep -v "^SCHEDULE_EXCLUDE_APP_IDS=" \
+        >> /etc/environment
 
-    # Process the crontab file with environment variables
-    envsubst < /etc/cron.d/app-cron > /etc/cron.d/app-cron.tmp
-    sed -i -e 's|\"||g' /etc/cron.d/app-cron
-    mv /etc/cron.d/app-cron.tmp /etc/cron.d/app-cron
+    # Generate the crontab from the global and per-app schedules.
+    if ! python /app/generate_crontab.py > /etc/cron.d/app-cron; then
+        exit 1
+    fi
     chmod 0644 /etc/cron.d/app-cron
 
     # Install cron job
     crontab /etc/cron.d/app-cron
 
+    if [ "$RUN_ON_START" = "true" ]; then
+        echo "RUN_ON_START=true, running script once before starting cron..."
+        python main.py
+    fi
+
     # Start cron service
     service cron start
 
-    echo "Cron job installed with schedule: $CRON_SCHEDULE"
+    echo "Cron job installed"
+    echo "Global cron schedule: ${CRON_SCHEDULE:-none}"
+    if [ -n "$APP_SCHEDULES" ]; then
+        echo "Per-app schedules installed from APP_SCHEDULES"
+    fi
     echo "Cron timezone: ${TZ:-UTC}"
     echo "Watching logs..."
     tail -f /var/log/cron.log

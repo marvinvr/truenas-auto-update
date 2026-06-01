@@ -19,13 +19,26 @@ NOTIFY_ON_SUCCESS = os.getenv("NOTIFY_ON_SUCCESS", "false").lower() == "true"
 ONLY_UPDATE_STARTED_APPS = os.getenv("ONLY_UPDATE_STARTED_APPS", "false").lower() == "true"
 AUTO_CLEANUP_IMAGES = os.getenv("AUTO_CLEANUP_IMAGES", "false").lower() == "true"
 SSL_VERIFY = os.getenv("SSL_VERIFY", "false").lower() == "true"
-EXCLUDE_APPS = [app.strip() for app in os.getenv("EXCLUDE_APPS", "").strip().split(",") if app.strip()]
-INCLUDE_APPS = [app.strip() for app in os.getenv("INCLUDE_APPS", "").strip().split(",") if app.strip()]
 APP_START_TIMEOUT_SECONDS = 600
 APP_STATE_POLL_INTERVAL_SECONDS = 10
 
+
+def parse_csv_env(name):
+    """Parse a comma-separated environment variable into a clean list."""
+    return [item.strip() for item in os.getenv(name, "").strip().split(",") if item.strip()]
+
+
+EXCLUDE_APPS = parse_csv_env("EXCLUDE_APPS")
+INCLUDE_APPS = parse_csv_env("INCLUDE_APPS")
+SCHEDULE_EXCLUDE_APP_IDS = parse_csv_env("SCHEDULE_EXCLUDE_APP_IDS")
+SCHEDULE_INCLUDE_APP_IDS = parse_csv_env("SCHEDULE_INCLUDE_APP_IDS")
+
 if EXCLUDE_APPS and INCLUDE_APPS:
     logger.error("Cannot use both EXCLUDE_APPS and INCLUDE_APPS simultaneously")
+    exit(1)
+
+if SCHEDULE_EXCLUDE_APP_IDS and SCHEDULE_INCLUDE_APP_IDS:
+    logger.error("Cannot use both SCHEDULE_EXCLUDE_APP_IDS and SCHEDULE_INCLUDE_APP_IDS simultaneously")
     exit(1)
 
 # Initialize Apprise
@@ -315,6 +328,7 @@ try:
             if not app_name:
                 logger.warning(f"Skipping app with missing name: {app}")
                 continue
+            app_id = app.get("id")
 
             app_state = app.get("state", "unknown")
             app_was_running = normalize_state(app_state) == "RUNNING"
@@ -325,6 +339,12 @@ try:
                 continue
             if INCLUDE_APPS and app_name not in INCLUDE_APPS:
                 logger.info(f"Skipping upgrade for: {app_name} (APP not in INCLUDE_APPS)")
+                continue
+            if SCHEDULE_EXCLUDE_APP_IDS and app_id in SCHEDULE_EXCLUDE_APP_IDS:
+                logger.info(f"Skipping upgrade for: {app_name} (APP id in SCHEDULE_EXCLUDE_APP_IDS)")
+                continue
+            if SCHEDULE_INCLUDE_APP_IDS and app_id not in SCHEDULE_INCLUDE_APP_IDS:
+                logger.info(f"Skipping upgrade for: {app_name} (APP id not in SCHEDULE_INCLUDE_APP_IDS)")
                 continue
             if ONLY_UPDATE_STARTED_APPS and not app_was_running:
                 logger.info(f"Skipping upgrade for: {app_name} (APP not running, state: {app_state})")
