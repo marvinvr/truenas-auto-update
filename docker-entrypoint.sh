@@ -11,6 +11,19 @@ if [ -n "$TZ" ]; then
 fi
 
 if [ -n "$CRON_SCHEDULE" ] || [ -n "$APP_SCHEDULES" ]; then
+    # Generate the crontab from the global and per-app schedules.
+    if ! python /app/generate_crontab.py > /etc/cron.d/app-cron; then
+        exit 1
+    fi
+
+    if [ ! -s /etc/cron.d/app-cron ]; then
+        # CRON_SCHEDULE/APP_SCHEDULES were set but produced no schedule lines
+        # (e.g. APP_SCHEDULES='{}'). Fall back to a single run instead of
+        # starting cron with an empty crontab and idling forever.
+        echo "No cron schedules generated from CRON_SCHEDULE/APP_SCHEDULES; running once..."
+        exec python main.py
+    fi
+
     # Set up environment variables for cron. Overwrite (not append) so repeated
     # container restarts do not accumulate stale/duplicate entries.
     printenv \
@@ -21,10 +34,6 @@ if [ -n "$CRON_SCHEDULE" ] || [ -n "$APP_SCHEDULES" ]; then
         | grep -v "^SCHEDULE_EXCLUDE_APP_IDS=" \
         > /etc/environment
 
-    # Generate the crontab from the global and per-app schedules.
-    if ! python /app/generate_crontab.py > /etc/cron.d/app-cron; then
-        exit 1
-    fi
     chmod 0644 /etc/cron.d/app-cron
 
     # Install cron job
