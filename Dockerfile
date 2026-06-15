@@ -5,7 +5,6 @@ RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y \
     cron \
     tzdata \
-    gettext-base \
     ca-certificates \
     curl \
     gnupg \
