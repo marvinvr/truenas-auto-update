@@ -318,6 +318,16 @@ try:
         apps = client.call("app.query")
         logger.info(f"Total apps found: {len(apps)}")
 
+        # Warn about configured app ids that do not match any app. APP_SCHEDULES
+        # keys are TrueNAS app ids, so a typo here silently skips the app forever.
+        known_app_ids = {app.get("id") for app in apps}
+        for configured_id in (*SCHEDULE_INCLUDE_APP_IDS, *SCHEDULE_EXCLUDE_APP_IDS):
+            if configured_id not in known_app_ids:
+                logger.warning(
+                    f"Scheduled app id '{configured_id}' does not match any TrueNAS app "
+                    f"(check APP_SCHEDULES; keys must be app ids, not names)"
+                )
+
         apps_with_upgrade = [app for app in apps if app.get("upgrade_available")]
 
         logger.info(f"Found {len(apps_with_upgrade)} apps with upgrade available")

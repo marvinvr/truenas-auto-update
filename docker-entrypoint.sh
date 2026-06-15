@@ -11,14 +11,15 @@ if [ -n "$TZ" ]; then
 fi
 
 if [ -n "$CRON_SCHEDULE" ] || [ -n "$APP_SCHEDULES" ]; then
-    # Set up environment variables for cron
+    # Set up environment variables for cron. Overwrite (not append) so repeated
+    # container restarts do not accumulate stale/duplicate entries.
     printenv \
         | grep -v "no_proxy" \
         | grep -v "^APP_SCHEDULES=" \
         | grep -v "^CRON_SCHEDULE=" \
         | grep -v "^SCHEDULE_INCLUDE_APP_IDS=" \
         | grep -v "^SCHEDULE_EXCLUDE_APP_IDS=" \
-        >> /etc/environment
+        > /etc/environment
 
     # Generate the crontab from the global and per-app schedules.
     if ! python /app/generate_crontab.py > /etc/cron.d/app-cron; then

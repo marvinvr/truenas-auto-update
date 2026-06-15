@@ -37,6 +37,25 @@ class ScheduleFilterBehaviorTest(unittest.TestCase):
         self.assertEqual(raised.exception.code, 1)
         self.assertEqual(FakeClient.instances, [])
 
+    def test_warns_when_scheduled_app_id_matches_no_app(self):
+        with self.assertLogs("__main__", level="WARNING") as captured:
+            run_main({"SCHEDULE_INCLUDE_APP_IDS": "does-not-exist"})
+
+        self.assertTrue(
+            any("does-not-exist" in message for message in captured.output)
+        )
+
+    def test_does_not_warn_when_scheduled_app_id_exists(self):
+        with self.assertLogs("__main__", level="WARNING") as captured:
+            run_main({"SCHEDULE_INCLUDE_APP_IDS": "app-two-id"})
+            import logging
+
+            logging.getLogger("__main__").warning("sentinel")
+
+        self.assertFalse(
+            any("does not match any TrueNAS app" in message for message in captured.output)
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

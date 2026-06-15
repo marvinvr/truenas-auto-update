@@ -63,6 +63,17 @@ class GenerateCrontabTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "5-field cron"):
             generate_crontab.parse_app_schedules('{"plex":"0 3 * *"}')
 
+    def test_rejects_five_fields_with_invalid_tokens(self):
+        with self.assertRaisesRegex(ValueError, "invalid cron field"):
+            generate_crontab.parse_app_schedules('{"plex":"a b c d e"}')
+
+    def test_accepts_cron_ranges_steps_lists_and_names(self):
+        schedules = generate_crontab.parse_app_schedules(
+            '{"plex":"*/15 0-6 1,15 * MON-FRI"}'
+        )
+
+        self.assertEqual(schedules["plex"], "*/15 0-6 1,15 * MON-FRI")
+
     def test_rejects_app_ids_with_commas(self):
         with self.assertRaisesRegex(ValueError, "only contain"):
             generate_crontab.parse_app_schedules('{"plex,other":"0 3 * * *"}')

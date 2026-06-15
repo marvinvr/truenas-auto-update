@@ -40,7 +40,7 @@ With that configuration:
 
 If `APP_SCHEDULES` is set without `CRON_SCHEDULE`, only apps with custom schedules are checked. Apps without custom schedules are not scheduled.
 
-Cron uses normal cron semantics. If the container is stopped during a scheduled weekly or monthly run, that run is missed. Set `RUN_ON_START=true` if you want an update check whenever the container starts.
+Cron uses normal cron semantics. If the container is stopped during a scheduled weekly or monthly run, that run is missed. Set `RUN_ON_START=true` if you want an update check whenever the container starts. Note that the `RUN_ON_START` check ignores per-app schedules and checks every app (subject to `INCLUDE_APPS`/`EXCLUDE_APPS`), so custom-scheduled apps are also updated on startup.
 
 Apps that were running before an upgrade are checked afterward. If TrueNAS leaves one stopped, the updater waits up to 10 minutes,
 tries to start it once, and waits up to another 10 minutes before sending a failure notification.
