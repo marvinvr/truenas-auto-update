@@ -74,6 +74,27 @@ class GenerateCrontabTest(unittest.TestCase):
 
         self.assertEqual(schedules["plex"], "*/15 0-6 1,15 * MON-FRI")
 
+    def test_accepts_cron_nickname_schedule(self):
+        schedules = generate_crontab.parse_app_schedules('{"plex":"@daily"}')
+
+        self.assertEqual(schedules["plex"], "@daily")
+
+    def test_normalises_nickname_case(self):
+        schedules = generate_crontab.parse_app_schedules('{"plex":" @Daily "}')
+
+        self.assertEqual(schedules["plex"], "@daily")
+
+    def test_builds_nickname_global_schedule(self):
+        crontab = generate_crontab.build_crontab("@hourly", {})
+
+        self.assertIn(
+            "@hourly /app/run-script.sh >> /var/log/cron.log 2>&1", crontab
+        )
+
+    def test_rejects_unknown_nickname(self):
+        with self.assertRaisesRegex(ValueError, "nickname"):
+            generate_crontab.parse_app_schedules('{"plex":"@yearlyish"}')
+
     def test_rejects_app_ids_with_commas(self):
         with self.assertRaisesRegex(ValueError, "only contain"):
             generate_crontab.parse_app_schedules('{"plex,other":"0 3 * * *"}')

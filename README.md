@@ -7,7 +7,7 @@ Yes, I know what you're thinking - "You shouldn't auto-update your TrueNAS apps!
 - `BASE_URL`: Your TrueNAS SCALE instance URL (e.g., `https://truenas.local`)
 - `API_KEY`: Your TrueNAS API key (see "Getting Started" for how to generate one)
 - `API_USERNAME` (_optional_): Username associated with the API key (default: `root`). **Required for TrueNAS 25.04+** where API keys are user-linked.
-- `CRON_SCHEDULE` (_optional_): Global cron schedule for when to check apps without custom schedules (e.g., `0 4 * * *` for daily at 4 AM). If neither `CRON_SCHEDULE` nor `APP_SCHEDULES` is set, the script will run once and then exit.
+- `CRON_SCHEDULE` (_optional_): Global cron schedule for when to check apps without custom schedules (e.g., `0 4 * * *` for daily at 4 AM). A 5-field expression or a cron nickname like `@daily` or `@hourly` may be used. If neither `CRON_SCHEDULE` nor `APP_SCHEDULES` is set, the script will run once and then exit.
 - `APP_SCHEDULES` (_optional_): JSON object mapping TrueNAS app IDs to custom cron schedules (e.g., `{"plex":"0 3 * * *","immich":"30 4 * * 0"}`). Apps listed here run on their custom schedules instead of the global `CRON_SCHEDULE`.
 - `RUN_ON_START` (_optional_): Set to "true" to run one update check immediately before starting cron when scheduled mode is enabled (default: "false").
 - `TZ` (_optional_): Timezone used by cron when evaluating `CRON_SCHEDULE` (e.g., `Europe/Zurich`). If not set, the container defaults to UTC.

@@ -16,6 +16,23 @@ _CRON_ATOM = r"(?:\d+|[A-Za-z]{3})"
 _CRON_ELEMENT = rf"(?:\*|{_CRON_ATOM}(?:-{_CRON_ATOM})?)(?:/\d+)?"
 CRON_FIELD_PATTERN = re.compile(rf"^{_CRON_ELEMENT}(?:,{_CRON_ELEMENT})*$")
 
+# Cron "nickname" schedules accepted in place of a 5-field expression. The cron
+# daemon in the container understands these, and the previous envsubst-based
+# crontab passed them through untouched, so we keep accepting them. Matched
+# case-insensitively and normalised to lowercase for the generated crontab.
+CRON_NICKNAMES = frozenset(
+    {
+        "@reboot",
+        "@yearly",
+        "@annually",
+        "@monthly",
+        "@weekly",
+        "@daily",
+        "@midnight",
+        "@hourly",
+    }
+)
+
 
 def parse_app_schedules(raw_value):
     """Parse the APP_SCHEDULES JSON map into a validated {app_id: schedule} dict."""
@@ -33,8 +50,7 @@ def parse_app_schedules(raw_value):
     parsed = OrderedDict()
     for app_id, schedule in schedules.items():
         validate_app_id(app_id)
-        validate_cron_schedule(schedule, f"APP_SCHEDULES[{app_id!r}]")
-        parsed[app_id] = schedule.strip()
+        parsed[app_id] = validate_cron_schedule(schedule, f"APP_SCHEDULES[{app_id!r}]")
 
     return parsed
 
@@ -52,17 +68,25 @@ def validate_app_id(app_id):
 
 
 def validate_cron_schedule(schedule, label):
-    """Validate a 5-field cron expression, checking each field's token syntax."""
+    """Validate a cron schedule and return its normalised form.
+
+    Accepts either a nickname like ``@daily`` or a 5-field cron expression,
+    checking each field's token syntax for the latter.
+    """
     if not isinstance(schedule, str):
         raise ValueError(f"{label} must be a string")
     if "\n" in schedule or "\r" in schedule:
         raise ValueError(f"{label} must not contain newlines")
-    fields = schedule.strip().split()
+    schedule = schedule.strip()
+    if schedule.lower() in CRON_NICKNAMES:
+        return schedule.lower()
+    fields = schedule.split()
     if len(fields) != 5:
-        raise ValueError(f"{label} must be a 5-field cron expression")
+        raise ValueError(f"{label} must be a 5-field cron expression or a nickname like @daily")
     for field in fields:
         if not CRON_FIELD_PATTERN.fullmatch(field):
             raise ValueError(f"{label} has an invalid cron field: {field!r}")
+    return schedule
 
 
 def group_schedules(app_schedules):
@@ -77,7 +101,7 @@ def build_crontab(cron_schedule, app_schedules):
     """Render cron lines for per-app schedules plus the global fallback schedule."""
     cron_schedule = cron_schedule.strip()
     if cron_schedule:
-        validate_cron_schedule(cron_schedule, "CRON_SCHEDULE")
+        cron_schedule = validate_cron_schedule(cron_schedule, "CRON_SCHEDULE")
 
     lines = []
     for schedule, app_ids in group_schedules(app_schedules).items():
