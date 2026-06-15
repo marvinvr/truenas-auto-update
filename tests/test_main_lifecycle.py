@@ -62,9 +62,10 @@ class UpgradeSuccessTest(unittest.TestCase):
         self.assertEqual(result.client.upgraded_apps, ["plex"])
         self.assertEqual(result.notifications, [])
 
-    def test_stopped_app_is_not_started_after_upgrade(self):
-        # app_was_running is False, so the restart path is skipped entirely.
-        result = run_main({"apps": [make_app("plex", state="STOPPED")]})
+    def test_non_running_app_is_not_restarted_after_upgrade(self):
+        # app_was_running is False (DEPLOYING is neither RUNNING nor STOPPED, so
+        # the real API still permits the upgrade), so the restart path is skipped.
+        result = run_main({"apps": [make_app("plex", state="DEPLOYING")]})
 
         self.assertEqual(result.client.upgraded_apps, ["plex"])
         self.assertEqual(result.client.started_apps, [])
@@ -163,6 +164,27 @@ class UpgradeErrorHandlingTest(unittest.TestCase):
 
         self.assertIn("Upgrade Failed", result.notification_titles)
 
+    def test_stopped_app_upgrade_rejected_by_server_is_reported(self):
+        # The real TrueNAS API rejects upgrading a STOPPED app
+        # (CallError: "In order to upgrade an app, it must not be in stopped
+        # state"). main.py surfaces it as a generic upgrade failure, and the
+        # message must NOT match the redeploy trigger.
+        result = run_main(
+            {
+                "apps": [
+                    make_app("plex", state="STOPPED", image_updates_available=True)
+                ],
+                "upgrade": {
+                    "plex": ClientException(
+                        "In order to upgrade an app, it must not be in stopped state"
+                    )
+                },
+            }
+        )
+
+        self.assertEqual(result.client.redeployed_apps, [])
+        self.assertIn("Upgrade Failed", result.notification_titles)
+
 
 class RedeployStaleAppTest(unittest.TestCase):
     def _stale_config(self, **overrides):
@@ -170,7 +192,10 @@ class RedeployStaleAppTest(unittest.TestCase):
             "apps": [
                 make_app("plex", state="RUNNING", image_updates_available=True)
             ],
-            "upgrade": {"plex": ClientException("No upgrade available")},
+            # Real middleware message: CallError(f'No upgrade available for {app_name!r}').
+            # This is what a sibling sharing an image tag sees after the first
+            # app's upgrade clears the shared image-update flag.
+            "upgrade": {"plex": ClientException("No upgrade available for 'plex'")},
         }
         config.update(overrides)
         return config
@@ -187,7 +212,7 @@ class RedeployStaleAppTest(unittest.TestCase):
                 "apps": [
                     make_app("plex", state="RUNNING", image_updates_available=False)
                 ],
-                "upgrade": {"plex": ClientException("No upgrade available")},
+                "upgrade": {"plex": ClientException("No upgrade available for 'plex'")},
             }
         )
 
@@ -285,8 +310,10 @@ class ConfigAndConnectionErrorTest(unittest.TestCase):
         self.assertEqual(ConfigurableClient.instances, [])
 
     def test_auth_failure_exits(self):
+        # AUTH_ERR is a real auth.login_ex response_type; any non-SUCCESS value
+        # is treated as a failure by main.py.
         with self.assertRaises(SystemExit) as raised:
-            run_main({"apps": [], "auth": "FAILED"})
+            run_main({"apps": [], "auth": "AUTH_ERR"})
 
         self.assertEqual(raised.exception.code, 1)
 

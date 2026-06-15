@@ -97,12 +97,18 @@ class ConfigurableClient:
         cfg = ConfigurableClient.config
 
         if method == "auth.login_ex":
+            # Real SUCCESS responses also carry "user_info"; main.py only checks
+            # response_type, so we omit it. Non-SUCCESS values mirror real ones
+            # (AUTH_ERR, EXPIRED, OTP_REQUIRED, REDIRECT).
             return {"response_type": cfg.get("auth", "SUCCESS")}
         if method == "app.query":
             query_error = cfg.get("query_error")
             if query_error is not None:
                 raise query_error
             return list(cfg.get("apps", []))
+        # app.upgrade/app.redeploy return an AppEntry and app.start returns null
+        # in the real API; main.py ignores all three return values, so None is a
+        # faithful-enough stand-in. job=True is passed by main.py and accepted here.
         if method == "app.upgrade":
             self.upgraded_apps.append(args[0])
             self._act("upgrade", args[0], default_state=None)
