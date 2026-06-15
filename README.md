@@ -7,7 +7,9 @@ Yes, I know what you're thinking - "You shouldn't auto-update your TrueNAS apps!
 - `BASE_URL`: Your TrueNAS SCALE instance URL (e.g., `https://truenas.local`)
 - `API_KEY`: Your TrueNAS API key (see "Getting Started" for how to generate one)
 - `API_USERNAME` (_optional_): Username associated with the API key (default: `root`). **Required for TrueNAS 25.04+** where API keys are user-linked.
-- `CRON_SCHEDULE` (_optional_): Cron schedule for when to check for updates (e.g., `0 4 * * *` for daily at 4 AM). If not set, the script will run once and then exit.
+- `CRON_SCHEDULE` (_optional_): Global cron schedule for when to check apps without custom schedules (e.g., `0 4 * * *` for daily at 4 AM). A 5-field expression or a cron nickname like `@daily` or `@hourly` may be used. If neither `CRON_SCHEDULE` nor `APP_SCHEDULES` is set, the script will run once and then exit.
+- `APP_SCHEDULES` (_optional_): JSON object mapping TrueNAS app IDs to custom cron schedules (e.g., `{"plex":"0 3 * * *","immich":"30 4 * * 0"}`). Apps listed here run on their custom schedules instead of the global `CRON_SCHEDULE`.
+- `RUN_ON_START` (_optional_): Set to "true" to run one update check immediately before starting cron when scheduled mode is enabled (default: "false").
 - `TZ` (_optional_): Timezone used by cron when evaluating `CRON_SCHEDULE` (e.g., `Europe/Zurich`). If not set, the container defaults to UTC.
 - `APPRISE_URLS` (_optional_): Apprise URLs to send notifications to (e.g., `https://example.com/apprise,https://example.com/apprise2`) More info on [Apprise](https://github.com/caronc/apprise)
 - `NOTIFY_ON_SUCCESS` (_optional_): Set to "true" to receive notifications when apps are successfully updated (default: "false")
@@ -18,6 +20,27 @@ Yes, I know what you're thinking - "You shouldn't auto-update your TrueNAS apps!
 - `AUTO_CLEANUP_IMAGES` (_optional_): Set to "true" to automatically clean up unused Docker images after all updates are complete (default: "false"). This runs `docker image prune -a -f` to remove all unused images and free up disk space. **Requires the Docker socket to be mounted** (see Docker Image Cleanup section below).
 
 NOTE: The `EXCLUDE_APPS` and `INCLUDE_APPS` variables are mutually exclusive. If both are set, the application will error out.
+
+### Per-App Schedules
+
+Use `APP_SCHEDULES` when some apps should update on their own cadence while the rest use the global `CRON_SCHEDULE`.
+
+```bash
+APP_SCHEDULES='{"plex":"0 3 * * *","immich":"30 4 * * 0"}'
+CRON_SCHEDULE="0 4 * * *"
+```
+
+With that configuration:
+
+- `plex` is checked daily at 3 AM
+- `immich` is checked Sundays at 4:30 AM
+- every other app is checked daily at 4 AM
+
+`APP_SCHEDULES` keys are TrueNAS app IDs. The existing `INCLUDE_APPS` and `EXCLUDE_APPS` filters still use app names and still apply to every scheduled run.
+
+If `APP_SCHEDULES` is set without `CRON_SCHEDULE`, only apps with custom schedules are checked. Apps without custom schedules are not scheduled.
+
+Cron uses normal cron semantics. If the container is stopped during a scheduled weekly or monthly run, that run is missed. Set `RUN_ON_START=true` if you want an update check whenever the container starts. Note that the `RUN_ON_START` check ignores per-app schedules and checks every app (subject to `INCLUDE_APPS`/`EXCLUDE_APPS`), so custom-scheduled apps are also updated on startup.
 
 Apps that were running before an upgrade are checked afterward. If TrueNAS leaves one stopped, the updater waits up to 10 minutes,
 tries to start it once, and waits up to another 10 minutes before sending a failure notification.
@@ -70,6 +93,8 @@ docker run --name truenas-auto-update \
          -e API_KEY=your-api-key \
          -e API_USERNAME=admin \
          -e CRON_SCHEDULE="0 4 * * *" \
+         -e APP_SCHEDULES='{"plex":"0 3 * * *","immich":"30 4 * * 0"}' \
+         -e RUN_ON_START="false" \
          -e TZ="Europe/Zurich" \
          -e APPRISE_URLS="https://example.com/apprise,https://example.com/apprise2" \
          -e NOTIFY_ON_SUCCESS="true" \

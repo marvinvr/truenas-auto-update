@@ -1,0 +1,138 @@
+import json
+import os
+import re
+import sys
+from collections import OrderedDict
+
+RUN_SCRIPT = "/app/run-script.sh"
+LOG_REDIRECT = ">> /var/log/cron.log 2>&1"
+APP_ID_PATTERN = re.compile(r"^[A-Za-z0-9_.-]+$")
+
+# A single cron field element: "*", a number or 3-letter name (JAN, SUN), an
+# inclusive range of those, each optionally followed by a "/step". A field is a
+# comma-separated list of elements. This is intentionally permissive validation
+# to catch obvious garbage (e.g. "a b c d e") rather than a full cron parser.
+_CRON_ATOM = r"(?:\d+|[A-Za-z]{3})"
+_CRON_ELEMENT = rf"(?:\*|{_CRON_ATOM}(?:-{_CRON_ATOM})?)(?:/\d+)?"
+CRON_FIELD_PATTERN = re.compile(rf"^{_CRON_ELEMENT}(?:,{_CRON_ELEMENT})*$")
+
+# Cron "nickname" schedules accepted in place of a 5-field expression. The cron
+# daemon in the container understands these, and the previous envsubst-based
+# crontab passed them through untouched, so we keep accepting them. Matched
+# case-insensitively and normalised to lowercase for the generated crontab.
+CRON_NICKNAMES = frozenset(
+    {
+        "@reboot",
+        "@yearly",
+        "@annually",
+        "@monthly",
+        "@weekly",
+        "@daily",
+        "@midnight",
+        "@hourly",
+    }
+)
+
+
+def parse_app_schedules(raw_value):
+    """Parse the APP_SCHEDULES JSON map into a validated {app_id: schedule} dict."""
+    if not raw_value.strip():
+        return {}
+
+    try:
+        schedules = json.loads(raw_value)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"APP_SCHEDULES must be valid JSON: {exc}") from exc
+
+    if not isinstance(schedules, dict):
+        raise ValueError("APP_SCHEDULES must be a JSON object mapping app ids to cron schedules")
+
+    parsed = OrderedDict()
+    for app_id, schedule in schedules.items():
+        validate_app_id(app_id)
+        parsed[app_id] = validate_cron_schedule(schedule, f"APP_SCHEDULES[{app_id!r}]")
+
+    return parsed
+
+
+def validate_app_id(app_id):
+    """Reject app ids that are empty, padded, or contain shell-unsafe characters."""
+    if not isinstance(app_id, str) or not app_id.strip():
+        raise ValueError("APP_SCHEDULES app ids must be non-empty strings")
+    if app_id != app_id.strip():
+        raise ValueError(f"APP_SCHEDULES app id {app_id!r} must not have surrounding whitespace")
+    if not APP_ID_PATTERN.fullmatch(app_id):
+        raise ValueError(
+            f"APP_SCHEDULES app id {app_id!r} must only contain letters, numbers, dots, underscores, or hyphens"
+        )
+
+
+def validate_cron_schedule(schedule, label):
+    """Validate a cron schedule and return its normalised form.
+
+    Accepts either a nickname like ``@daily`` or a 5-field cron expression,
+    checking each field's token syntax for the latter.
+    """
+    if not isinstance(schedule, str):
+        raise ValueError(f"{label} must be a string")
+    if "\n" in schedule or "\r" in schedule:
+        raise ValueError(f"{label} must not contain newlines")
+    schedule = schedule.strip()
+    if schedule.lower() in CRON_NICKNAMES:
+        return schedule.lower()
+    fields = schedule.split()
+    if len(fields) != 5:
+        raise ValueError(f"{label} must be a 5-field cron expression or a nickname like @daily")
+    for field in fields:
+        if not CRON_FIELD_PATTERN.fullmatch(field):
+            raise ValueError(f"{label} has an invalid cron field: {field!r}")
+    return schedule
+
+
+def group_schedules(app_schedules):
+    """Group app ids by their shared cron schedule, preserving insertion order."""
+    grouped = OrderedDict()
+    for app_id, schedule in app_schedules.items():
+        grouped.setdefault(schedule, []).append(app_id)
+    return grouped
+
+
+def build_crontab(cron_schedule, app_schedules):
+    """Render cron lines for per-app schedules plus the global fallback schedule."""
+    cron_schedule = cron_schedule.strip()
+    if cron_schedule:
+        cron_schedule = validate_cron_schedule(cron_schedule, "CRON_SCHEDULE")
+
+    lines = []
+    for schedule, app_ids in group_schedules(app_schedules).items():
+        include_ids = ",".join(app_ids)
+        lines.append(
+            f"{schedule} SCHEDULE_INCLUDE_APP_IDS={include_ids} {RUN_SCRIPT} {LOG_REDIRECT}"
+        )
+
+    if cron_schedule:
+        custom_ids = ",".join(app_schedules.keys())
+        env_prefix = f"SCHEDULE_EXCLUDE_APP_IDS={custom_ids} " if custom_ids else ""
+        lines.append(f"{cron_schedule} {env_prefix}{RUN_SCRIPT} {LOG_REDIRECT}")
+
+    if lines:
+        lines.append("# An empty line is required at the end of this file for a valid cron file")
+
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
+def main():
+    """Generate the crontab from environment config and print it to stdout."""
+    try:
+        app_schedules = parse_app_schedules(os.getenv("APP_SCHEDULES", ""))
+        crontab = build_crontab(os.getenv("CRON_SCHEDULE", ""), app_schedules)
+    except ValueError as exc:
+        print(f"Invalid schedule configuration: {exc}", file=sys.stderr)
+        return 1
+
+    print(crontab, end="")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
