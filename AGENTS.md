@@ -21,6 +21,7 @@ This is a simple Python application that automatically updates TrueNAS SCALE app
 - Scheduled mode generates cron entries at container startup. `APP_SCHEDULES` entries use TrueNAS app IDs for routing, while upgrade/start/redeploy API calls still use the app `name`.
 - Job waiting is handled automatically by the API client when using `job=True` parameter
 - Configurable SSL verification for TrueNAS API calls (disabled by default for self-signed certificates)
+- The updater finds its own TrueNAS app (container hostname vs. the container IDs from `app.query`, image name as a fallback) and upgrades it last, because upgrading it recreates the container and ends the run
 
 ## Environment Configuration
 

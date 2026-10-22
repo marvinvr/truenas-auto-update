@@ -1,5 +1,6 @@
 import logging
 import os
+import socket
 import subprocess
 import time
 from urllib.parse import urlparse
@@ -21,6 +22,7 @@ AUTO_CLEANUP_IMAGES = os.getenv("AUTO_CLEANUP_IMAGES", "false").lower() == "true
 SSL_VERIFY = os.getenv("SSL_VERIFY", "false").lower() == "true"
 APP_START_TIMEOUT_SECONDS = 600
 APP_STATE_POLL_INTERVAL_SECONDS = 10
+SELF_IMAGE_NAME = "truenas-auto-update"
 
 
 def parse_csv_env(name):
@@ -248,6 +250,30 @@ def ensure_running_after_upgrade(client, app_name, operation="upgrade"):
     return False
 
 
+def find_self_app_name(apps, hostname=None):
+    """Return the name of the TrueNAS app running this updater, or None.
+
+    Docker sets a container's hostname to the first 12 characters of its ID, and
+    app.query lists the full IDs of every app's containers, so the app owning this
+    container can be found without any configuration. If the hostname was
+    customised, fall back to the only app running a truenas-auto-update image.
+    """
+    if hostname is None:
+        hostname = socket.gethostname()
+    image_matches = set()
+    for app in apps:
+        workloads = app.get("active_workloads") or {}
+        for container in workloads.get("container_details") or []:
+            container_id = container.get("id") or ""
+            if len(hostname) >= 12 and container_id.startswith(hostname):
+                return app.get("name")
+            if SELF_IMAGE_NAME in (container.get("image") or ""):
+                image_matches.add(app.get("name"))
+    if len(image_matches) == 1:
+        return image_matches.pop()
+    return None
+
+
 def redeploy_stale_app(client, app_name, app_was_running):
     """Redeploy an app that TrueNAS reported as having no upgrade available.
 
@@ -295,6 +321,7 @@ if not BASE_URL or not API_KEY:
 
 # Build WebSocket URI from BASE_URL
 ws_uri = build_websocket_uri(BASE_URL)
+images_cleaned_up = False
 logger.info(f"Connecting to TrueNAS API at {ws_uri}")
 
 try:
@@ -330,6 +357,13 @@ try:
 
         apps_with_upgrade = [app for app in apps if app.get("upgrade_available")]
 
+        # Upgrading the updater's own app recreates this container and ends the
+        # run, so keep it for last to let every other app be upgraded first.
+        self_app_name = find_self_app_name(apps)
+        if self_app_name:
+            logger.info(f"Running as TrueNAS app {self_app_name}; it will be upgraded last")
+            apps_with_upgrade.sort(key=lambda app: app.get("name") == self_app_name)
+
         logger.info(f"Found {len(apps_with_upgrade)} apps with upgrade available")
 
         for app in apps_with_upgrade:
@@ -359,6 +393,13 @@ try:
             if ONLY_UPDATE_STARTED_APPS and not app_was_running:
                 logger.info(f"Skipping upgrade for: {app_name} (APP not running, state: {app_state})")
                 continue
+
+            if app_name == self_app_name:
+                # The run ends as soon as this container is recreated, so do the
+                # end-of-run cleanup now.
+                logger.info(f"Upgrading {app_name} last; this run ends when its container is recreated")
+                cleanup_docker_images()
+                images_cleaned_up = True
 
             logger.info(f"Upgrading {app_name}...")
 
@@ -409,6 +450,7 @@ except Exception as e:
     exit(1)
 
 # Run Docker image cleanup after all updates are done
-cleanup_docker_images()
+if not images_cleaned_up:
+    cleanup_docker_images()
 
 logger.info("Done")

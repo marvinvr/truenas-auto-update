@@ -21,6 +21,10 @@ Yes, I know what you're thinking - "You shouldn't auto-update your TrueNAS apps!
 
 NOTE: The `EXCLUDE_APPS` and `INCLUDE_APPS` variables are mutually exclusive. If both are set, the application will error out.
 
+### Updating the Updater Itself
+
+When the updater runs as a TrueNAS app, it recognises its own app and always upgrades it last. Upgrading it recreates its container, which ends the current run, so every other app is updated first. If `AUTO_CLEANUP_IMAGES` is enabled, the image cleanup runs just before that final upgrade. No configuration is needed: the app is found by matching the container's hostname against the container IDs reported by TrueNAS, with the `truenas-auto-update` image name as a fallback.
+
 ### Per-App Schedules
 
 Use `APP_SCHEDULES` when some apps should update on their own cadence while the rest use the global `CRON_SCHEDULE`.
