@@ -1,2 +1,2 @@
-apprise==1.9.1
+apprise==1.11.0
 git+https://github.com/truenas/api_client.git
